@@ -513,7 +513,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
           </div>
 
           {/* Filters Grid */}
-          <div className="relative z-30 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+          <div className="relative z-20 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
             {/* Searchable Subject Selector */}
             <SearchableSelect
               id="subject-select"
