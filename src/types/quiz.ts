@@ -8,6 +8,8 @@ export interface Question {
   correctAnswer: string;
   explanation: string | null;
   imageUrl: string | null;
+  questionType: 'MCQ' | 'MSQ' | 'NAT' | string;
+  hasImage: boolean;
   createdAt?: string;
 }
 

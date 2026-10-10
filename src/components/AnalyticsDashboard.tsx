@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -8,6 +8,10 @@ import {
   Play,
   RefreshCw,
   Clock,
+  BarChart2,
+  ArrowUpDown,
+  AlignLeft,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -35,6 +39,11 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
   onRefresh,
   onPracticeTopic,
 }) => {
+  const [filterType, setFilterType] = useState<'attempted' | 'needsFocus' | 'all'>('attempted');
+  const [selectedSubject, setSelectedSubject] = useState<string>('ALL');
+  const [sortBy, setSortBy] = useState<'accuracy-asc' | 'accuracy-desc' | 'attempts-desc' | 'name'>('accuracy-asc');
+  const [chartLayout, setChartLayout] = useState<'horizontal' | 'vertical'>('horizontal');
+
   const totalTopics = performanceData.length;
   const practicedTopics = performanceData.filter((t) => t.totalAttempts > 0).length;
   const syllabusCoveragePct =
@@ -55,14 +64,62 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
     .filter((t) => t.needsFocus)
     .sort((a, b) => a.accuracyPercentage - b.accuracyPercentage);
 
-  const chartData = performanceData.map((item) => ({
-    name: item.topic.length > 18 ? `${item.topic.slice(0, 16)}…` : item.topic,
-    fullTopic: item.topic,
-    subject: item.subject,
-    accuracy: item.accuracyPercentage,
-    attempts: item.totalAttempts,
-    needsFocus: item.needsFocus,
-  }));
+  const subjects = useMemo(() => {
+    return Array.from(new Set(performanceData.map((p) => p.subject))).filter(Boolean).sort();
+  }, [performanceData]);
+
+  const filteredTopics = useMemo(() => {
+    return performanceData
+      .filter((item) => {
+        if (selectedSubject !== 'ALL' && item.subject !== selectedSubject) {
+          return false;
+        }
+        if (filterType === 'attempted' && item.totalAttempts === 0) {
+          return false;
+        }
+        if (filterType === 'needsFocus' && !item.needsFocus) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'accuracy-asc') {
+          return a.accuracyPercentage - b.accuracyPercentage || b.totalAttempts - a.totalAttempts;
+        }
+        if (sortBy === 'accuracy-desc') {
+          return b.accuracyPercentage - a.accuracyPercentage || b.totalAttempts - a.totalAttempts;
+        }
+        if (sortBy === 'attempts-desc') {
+          return b.totalAttempts - a.totalAttempts || a.accuracyPercentage - b.accuracyPercentage;
+        }
+        return a.topic.localeCompare(b.topic);
+      });
+  }, [performanceData, selectedSubject, filterType, sortBy]);
+
+  const chartData = useMemo(() => {
+    return filteredTopics.map((item) => {
+      const maxLen = chartLayout === 'horizontal' ? 24 : 14;
+      const displayName = item.topic.length > maxLen ? `${item.topic.slice(0, maxLen - 1)}…` : item.topic;
+
+      let fill = '#10b981';
+      if (item.totalAttempts === 0) {
+        fill = '#94a3b8';
+      } else if (item.needsFocus || item.accuracyPercentage < 60) {
+        fill = '#ef4444';
+      }
+
+      return {
+        name: displayName,
+        fullTopic: item.topic,
+        subject: item.subject,
+        accuracy: item.accuracyPercentage,
+        attempts: item.totalAttempts,
+        correctAttempts: item.correctAttempts,
+        needsFocus: item.needsFocus,
+        fill,
+      };
+    });
+  }, [filteredTopics, chartLayout]);
 
   return (
     <div className="space-y-6">
@@ -243,75 +300,329 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
       </div>
 
       {/* Recharts Topic Accuracy Visualization */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-5">
+        {/* Header & Legends */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              Topic-wise Accuracy Visualization
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Dashed line indicates the 60% mastery threshold. Red bars indicate topics flagged as Needs Focus.
+            <div className="flex items-center gap-2">
+              <BarChart2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Topic-wise Accuracy Visualization
+              </h3>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Dashed red line indicates the 60% mastery threshold. Showing {chartData.length} of {performanceData.length} topics.
             </p>
           </div>
-          <div className="flex items-center gap-3 text-xs">
+
+          <div className="flex flex-wrap items-center gap-3 text-xs">
             <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
               <span className="w-3 h-3 rounded-sm bg-red-500 inline-block" /> Needs Focus (&lt;60%)
             </span>
             <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
               <span className="w-3 h-3 rounded-sm bg-emerald-500 inline-block" /> On Track (&ge;60%)
             </span>
+            {filterType === 'all' && (
+              <span className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                <span className="w-3 h-3 rounded-sm bg-slate-400 inline-block" /> Unattempted
+              </span>
+            )}
           </div>
         </div>
 
-        <div className="h-72 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 12, right: 20, left: 0, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" opacity={0.2} />
-              <XAxis
-                dataKey="name"
-                tick={{ fontSize: 12, fill: '#64748b' }}
-                interval={0}
-                angle={-12}
-                textAnchor="end"
-              />
-              <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 12, fill: '#64748b' }} />
-              <Tooltip
-                formatter={(value: number) => [`${value}%`, 'Accuracy']}
-                labelFormatter={(_, payload) => {
-                  if (payload && payload.length > 0) {
-                    const item = payload[0].payload;
-                    return `${item.subject} — ${item.fullTopic} (${item.attempts} attempts)`;
-                  }
-                  return '';
-                }}
-                contentStyle={{
-                  borderRadius: '12px',
-                  border: '1px solid #cbd5e1',
-                  fontSize: '12px',
-                }}
-              />
-              <ReferenceLine
-                y={60}
-                stroke="#ef4444"
-                strokeDasharray="4 4"
-                label={{ value: '60% Target', position: 'insideTopRight', fill: '#ef4444', fontSize: 11 }}
-              />
-              <Bar dataKey="accuracy" radius={[6, 6, 0, 0]}>
-                {chartData.map((entry, index) => {
-                  let fill = '#6366f1';
-                  if (entry.attempts === 0) {
-                    fill = '#94a3b8';
-                  } else if (entry.needsFocus || entry.accuracy < 60) {
-                    fill = '#ef4444';
-                  } else {
-                    fill = '#10b981';
-                  }
-                  return <Cell key={`cell-${index}`} fill={fill} />;
-                })}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+        {/* Interactive Controls & Filters */}
+        <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-between gap-3 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+          {/* Quick Filter Mode Pills */}
+          <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setFilterType('attempted')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                filterType === 'attempted'
+                  ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Attempted ({practicedTopics})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterType('needsFocus')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                filterType === 'needsFocus'
+                  ? 'bg-white dark:bg-slate-700 text-red-600 dark:text-red-400 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Needs Focus ({needsFocusTopics.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterType('all')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                filterType === 'all'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              All Topics ({totalTopics})
+            </button>
+          </div>
+
+          {/* Subject, Sort & View Mode Controls */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Subject Selector */}
+            {subjects.length > 1 && (
+              <select
+                aria-label="Filter by Subject"
+                value={selectedSubject}
+                onChange={(e) => setSelectedSubject(e.target.value)}
+                className="text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="ALL">All Subjects</option>
+                {subjects.map((sub) => (
+                  <option key={sub} value={sub}>
+                    {sub}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Sort Selector */}
+            <div className="relative inline-flex items-center">
+              <select
+                aria-label="Sort topics"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="accuracy-asc">Sort: Lowest Accuracy</option>
+                <option value="accuracy-desc">Sort: Highest Accuracy</option>
+                <option value="attempts-desc">Sort: Most Attempts</option>
+                <option value="name">Sort: Topic Name (A-Z)</option>
+              </select>
+            </div>
+
+            {/* Layout Toggle (Horizontal vs Vertical) */}
+            <div className="inline-flex p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                title="Horizontal layout (Best for readability)"
+                onClick={() => setChartLayout('horizontal')}
+                className={`p-1.5 rounded-md transition-all ${
+                  chartLayout === 'horizontal'
+                    ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                }`}
+              >
+                <AlignLeft className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                title="Vertical layout"
+                onClick={() => setChartLayout('vertical')}
+                className={`p-1.5 rounded-md transition-all ${
+                  chartLayout === 'vertical'
+                    ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                }`}
+              >
+                <BarChart2 className="w-3.5 h-3.5 rotate-90" />
+              </button>
+            </div>
+          </div>
         </div>
+
+        {/* Chart Body */}
+        {chartData.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 px-4 text-center rounded-xl bg-slate-50/50 dark:bg-slate-800/20 border border-dashed border-slate-200 dark:border-slate-800">
+            <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 mb-3">
+              <BarChart2 className="w-6 h-6" />
+            </div>
+            <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+              {filterType === 'attempted'
+                ? 'No topics attempted yet in this selection'
+                : filterType === 'needsFocus'
+                ? 'No topics flagged as "Needs Focus" in this selection!'
+                : 'No topics found matching your criteria'}
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
+              {filterType === 'attempted'
+                ? 'Select "All Topics" to inspect syllabus topics, or start practicing questions to generate your accuracy breakdown.'
+                : 'Topics with < 60% accuracy (minimum 3 attempts) will appear here automatically.'}
+            </p>
+          </div>
+        ) : chartLayout === 'horizontal' ? (
+          <div className="overflow-y-auto max-h-[460px] pr-2 rounded-lg">
+            <div style={{ height: `${Math.max(chartData.length * 36 + 40, 240)}px` }} className="w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  layout="vertical"
+                  data={chartData}
+                  margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#94a3b8" opacity={0.2} />
+                  <XAxis
+                    type="number"
+                    domain={[0, 100]}
+                    unit="%"
+                    tick={{ fontSize: 11, fill: '#64748b' }}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={170}
+                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    interval={0}
+                  />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const item = payload[0].payload;
+                        return (
+                          <div className="bg-slate-900 text-white text-xs rounded-xl p-3 shadow-xl border border-slate-700 space-y-1.5 min-w-[200px]">
+                            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                              {item.subject}
+                            </div>
+                            <div className="font-bold text-sm text-slate-100 leading-snug">
+                              {item.fullTopic}
+                            </div>
+                            <div className="flex items-center justify-between gap-4 pt-1.5 border-t border-slate-800">
+                              <span className="text-slate-400">Accuracy:</span>
+                              <span className={`font-bold ${item.accuracy >= 60 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {item.attempts === 0 ? 'Not practiced' : `${item.accuracy}%`}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-slate-400">Attempts:</span>
+                              <span className="font-medium text-slate-300">
+                                {item.correctAttempts} / {item.attempts} correct
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-slate-400">Status:</span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  item.needsFocus
+                                    ? 'bg-red-500/20 text-red-300'
+                                    : item.attempts === 0
+                                    ? 'bg-slate-700 text-slate-300'
+                                    : 'bg-emerald-500/20 text-emerald-300'
+                                }`}
+                              >
+                                {item.needsFocus
+                                  ? 'Needs Focus (<60%)'
+                                  : item.attempts === 0
+                                  ? 'Not Attempted'
+                                  : 'On Track (≥60%)'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <ReferenceLine
+                    x={60}
+                    stroke="#ef4444"
+                    strokeDasharray="4 4"
+                    label={{ value: '60% Target', position: 'top', fill: '#ef4444', fontSize: 11 }}
+                  />
+                  <Bar dataKey="accuracy" radius={[0, 6, 6, 0]} barSize={18}>
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-x-auto pb-2 rounded-lg">
+            <div
+              style={{
+                minWidth: `${Math.max(650, chartData.length * 48)}px`,
+                height: '320px',
+              }}
+              className="w-full"
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 12, right: 20, left: 0, bottom: 45 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" opacity={0.2} />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    interval={0}
+                    angle={-35}
+                    textAnchor="end"
+                    height={60}
+                  />
+                  <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const item = payload[0].payload;
+                        return (
+                          <div className="bg-slate-900 text-white text-xs rounded-xl p-3 shadow-xl border border-slate-700 space-y-1.5 min-w-[200px]">
+                            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                              {item.subject}
+                            </div>
+                            <div className="font-bold text-sm text-slate-100 leading-snug">
+                              {item.fullTopic}
+                            </div>
+                            <div className="flex items-center justify-between gap-4 pt-1.5 border-t border-slate-800">
+                              <span className="text-slate-400">Accuracy:</span>
+                              <span className={`font-bold ${item.accuracy >= 60 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {item.attempts === 0 ? 'Not practiced' : `${item.accuracy}%`}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-slate-400">Attempts:</span>
+                              <span className="font-medium text-slate-300">
+                                {item.correctAttempts} / {item.attempts} correct
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-slate-400">Status:</span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  item.needsFocus
+                                    ? 'bg-red-500/20 text-red-300'
+                                    : item.attempts === 0
+                                    ? 'bg-slate-700 text-slate-300'
+                                    : 'bg-emerald-500/20 text-emerald-300'
+                                }`}
+                              >
+                                {item.needsFocus
+                                  ? 'Needs Focus (<60%)'
+                                  : item.attempts === 0
+                                  ? 'Not Attempted'
+                                  : 'On Track (≥60%)'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <ReferenceLine
+                    y={60}
+                    stroke="#ef4444"
+                    strokeDasharray="4 4"
+                    label={{ value: '60% Target', position: 'insideTopRight', fill: '#ef4444', fontSize: 11 }}
+                  />
+                  <Bar dataKey="accuracy" radius={[6, 6, 0, 0]} barSize={22}>
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Complete Syllabus Breakdown Table */}

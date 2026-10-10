@@ -31,19 +31,24 @@ const PRESET_QUERIES = [
   },
 ];
 
-export const DatabaseExplorer: React.FC = () => {
+interface DatabaseExplorerProps {
+  isActive?: boolean;
+}
+
+export const DatabaseExplorer: React.FC<DatabaseExplorerProps> = ({ isActive = true }) => {
   const [status, setStatus] = useState<DbStatusResponse | null>(null);
   const [sql, setSql] = useState<string>(PRESET_QUERIES[0].sql);
   const [queryResult, setQueryResult] = useState<SqlQueryResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState<boolean>(false);
 
-  const loadStatusAndRunQuery = async (queryToRun: string) => {
+  const loadStatusAndRunQuery = async (queryToRun: string, forceStatusRefresh = false) => {
     setLoading(true);
     setError(null);
     try {
       const [dbStat, res] = await Promise.all([
-        fetchDbStatus(),
+        fetchDbStatus({ forceRefresh: forceStatusRefresh }),
         executeSqlQuery(queryToRun),
       ]);
       setStatus(dbStat);
@@ -57,15 +62,36 @@ export const DatabaseExplorer: React.FC = () => {
   };
 
   useEffect(() => {
-    loadStatusAndRunQuery(sql);
-  }, []);
+    if (isActive && !initialized) {
+      setInitialized(true);
+      loadStatusAndRunQuery(sql, false);
+    }
+  }, [isActive, initialized, sql]);
 
   const handleRunSql = async (customSql?: string) => {
     const targetSql = customSql ?? sql;
     if (customSql) {
       setSql(customSql);
     }
-    await loadStatusAndRunQuery(targetSql);
+    if (!status) {
+      await loadStatusAndRunQuery(targetSql, false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await executeSqlQuery(targetSql);
+      setQueryResult(res);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || 'Unable to execute query. Verify backend is running.';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefreshDb = async () => {
+    await loadStatusAndRunQuery(sql, true);
   };
 
   return (
@@ -104,7 +130,7 @@ export const DatabaseExplorer: React.FC = () => {
             </a>
             <button
               type="button"
-              onClick={() => handleRunSql()}
+              onClick={handleRefreshDb}
               disabled={loading}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
             >
